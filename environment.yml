@@ -1,0 +1,23 @@
+name: lab03-dl-2026-01
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python 3.10 ofrece buena compatibilidad con PyTorch, torchvision y Streamlit.
+  - python=3.10
+  - pip>=24
+
+  # Las dependencias Python se declaran aqui para crear el ambiente usando
+  # solamente este archivo.
+  - pip:
+      - torch>=2.2
+      - torchvision>=0.17
+      - numpy>=1.26
+      - Pillow>=10.0
+      - matplotlib>=3.8
+      - streamlit>=1.32
+      - opencv-python-headless>=4.9
+      - scikit-learn>=1.4
+      - pytest>=8.0
