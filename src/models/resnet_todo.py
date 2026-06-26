@@ -3,24 +3,55 @@
 from __future__ import annotations
 
 import torch
+from torch import nn
+from torchvision import models
 
 from src.models.base import BaseMultiTaskModel
 
 
 class MultiTaskResNet(BaseMultiTaskModel):
-    """TODO(alumno): implement E4 and E5 with torchvision.models.resnet18.
+    """Implementación de E4 y E5 con torchvision.models.resnet18."""
 
-    The implementation should support a frozen backbone and fine-tuning. It
-    must replace the original classification layer with separate gender and age
-    heads, and expose the number of unfrozen blocks for ablation studies.
-    """
-
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, num_unfrozen_blocks: int = 0) -> None:
         super().__init__()
-        raise NotImplementedError(
-            "E4/E5 MultiTaskResNet no ha sido implementado. "
-            "Complete src/models/resnet_todo.py."
-        )
+        
+        # 1. Cargar el modelo base preentrenado
+        self.backbone = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+
+        # 2. Congelar todo el backbone inicialmente (Útil para E4)
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+
+        # 3. Descongelar bloques específicos de atrás hacia adelante para fine-tuning (E5)
+        # ResNet18 está compuesta por layer1, layer2, layer3 y layer4.
+        blocks_to_unfreeze = []
+        if num_unfrozen_blocks >= 1:
+            blocks_to_unfreeze.append(self.backbone.layer4)
+        if num_unfrozen_blocks >= 2:
+            blocks_to_unfreeze.append(self.backbone.layer3)
+        if num_unfrozen_blocks >= 3:
+            blocks_to_unfreeze.append(self.backbone.layer2)
+        if num_unfrozen_blocks >= 4:
+            blocks_to_unfreeze.append(self.backbone.layer1)
+
+        for block in blocks_to_unfreeze:
+            for param in block.parameters():
+                param.requires_grad = True
+
+        # 4. Extraer la cantidad de características de salida y reemplazar la capa original (fc)
+        in_features = self.backbone.fc.in_features
+        self.backbone.fc = nn.Identity()
+
+        # 5. Definir los nuevos cabezales independientes para género y edad
+        self.gender_head = nn.Linear(in_features, 2)
+        self.age_head = nn.Linear(in_features, 1)
 
     def forward(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        raise NotImplementedError("TODO(alumno): implementar forward de MultiTaskResNet.")
+        # Extraer características visuales compartidas
+        features = self.backbone(images)
+        
+        # Generar salidas de clasificación (género) y regresión (edad)
+        gender_logits = self.gender_head(features)
+        age_predictions = self.age_head(features).squeeze(1)
+        
+        return gender_logits, age_predictions
