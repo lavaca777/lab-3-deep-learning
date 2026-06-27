@@ -17,7 +17,7 @@ from src.models.cnn import MultiTaskCNN
 from src.training.losses import MultiTaskLoss
 from src.training.trainer import MultiTaskTrainer
 from src.utils import set_seed
-
+from src.models.mlp_todo import MLPMultitask, MLPMultitaskNoDropout, MLPMultitaskWide
 
 @dataclass(frozen=True)
 class ExperimentSpec:
