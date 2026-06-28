@@ -264,7 +264,8 @@ class ExperimentRunner:
         
         elif spec.model_kind == "mlp":
             # E2: Perceptrón Multicapa Multitarea
-            if spec.experiment_name == "mlp_no_dropout":
+            # Corregido: cambiamos spec.experiment_name por spec.name
+            if spec.name == "mlp_no_dropout":
                 model = MLPMultitaskNoDropout(hidden_dim=256)
                 model_kwargs = {"hidden_dim": 256, "use_dropout": False}
             else:
