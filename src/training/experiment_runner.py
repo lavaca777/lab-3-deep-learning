@@ -17,7 +17,7 @@ from src.models.cnn import MultiTaskCNN
 from src.training.losses import MultiTaskLoss
 from src.training.trainer import MultiTaskTrainer
 from src.utils import set_seed
-
+from src.models.mlp_todo import MLPMultitask, MLPMultitaskNoDropout 
 
 @dataclass(frozen=True)
 class ExperimentSpec:
@@ -52,10 +52,10 @@ def build_experiment_catalog(config: AppConfig) -> dict[str, ExperimentSpec]:
         ExperimentSpec("E1", "Baseline clasico", "classical_pca_50", "ablacion", "PCA=50 componentes", False, "classical"),
         ExperimentSpec("E1", "Baseline clasico", "classical_pca_200", "ablacion", "PCA=200 componentes", False, "classical"),
         # E2: students must implement both the base MLP and its ablations.
-        ExperimentSpec("E2", "MLP multitarea", "mlp_base", "base", "ninguno", False, "mlp"),
-        ExperimentSpec("E2", "MLP multitarea", "mlp_no_dropout", "ablacion", "dropout=0.0", False, "mlp"),
-        ExperimentSpec("E2", "MLP multitarea", "mlp_lambda_low", "ablacion", f"lambda_age={low_lambda:g}", False, "mlp"),
-        ExperimentSpec("E2", "MLP multitarea", "mlp_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", False, "mlp"),
+        ExperimentSpec("E2", "MLP multitarea", "mlp_base", "base", "ninguno", True, "mlp"),
+        ExperimentSpec("E2", "MLP multitarea", "mlp_no_dropout", "ablacion", "dropout=0.0", True, "mlp"),
+        ExperimentSpec("E2", "MLP multitarea", "mlp_lambda_low", "ablacion", f"lambda_age={low_lambda:g}", True, "mlp"),
+        ExperimentSpec("E2", "MLP multitarea", "mlp_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", True, "mlp"),
         # E3: complete PyTorch CNN example and one-change-at-a-time ablations.
         ExperimentSpec(
             "E3",
@@ -252,13 +252,25 @@ class ExperimentRunner:
 
     @staticmethod
     @staticmethod
+
     def _build_model(spec: ExperimentSpec) -> tuple[nn.Module, dict[str, float]]:
         from src.models.cnn import MultiTaskCNN
         from src.models.resnet_todo import MultiTaskResNet  # Añadir esta importación
+        from src.models.mlp_todo import MLPMultitask, MLPMultitaskNoDropout  # <-- Añadimos esto
         
         if spec.model_kind == "cnn":
             model_kwargs = {"dropout": spec.dropout}
             return MultiTaskCNN(**model_kwargs), model_kwargs
+        
+        elif spec.model_kind == "mlp":
+            # E2: Perceptrón Multicapa Multitarea
+            if spec.experiment_name == "mlp_no_dropout":
+                model = MLPMultitaskNoDropout(hidden_dim=256)
+                model_kwargs = {"hidden_dim": 256, "use_dropout": False}
+            else:
+                model = MLPMultitask(hidden_dim=256)
+                model_kwargs = {"hidden_dim": 256, "use_dropout": True}
+            return model, model_kwargs
         
         elif spec.model_kind == "resnet_frozen":
             # E4: ResNet con extractor de características totalmente congelado
@@ -274,14 +286,6 @@ class ExperimentRunner:
 
         # TODO(alumno): extend this factory when E1 and E2 are implemented.
         raise NotImplementedError(f"No existe una fabrica para model_kind={spec.model_kind}.")
-
-    @staticmethod
-    def _count_trainable_parameters(model: nn.Module) -> int:
-        return sum(
-            parameter.numel()
-            for parameter in model.parameters()
-            if parameter.requires_grad
-        )
 
     @staticmethod
     def _not_implemented_result(spec: ExperimentSpec) -> ExperimentResult:
