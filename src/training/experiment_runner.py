@@ -16,6 +16,7 @@ from src.evaluation.metrics import MultiTaskEvaluator, MultiTaskMetrics
 from src.evaluation.plots import ResultPlotter
 from src.evaluation.reporter import ExperimentResult, ExperimentStatus
 from src.models.cnn import MultiTaskCNN
+from src.models.resnet_todo import MultiTaskResNet
 from src.training.losses import MultiTaskLoss
 from src.training.trainer import MultiTaskTrainer
 from src.utils import set_seed
@@ -143,15 +144,15 @@ def build_experiment_catalog(config: AppConfig) -> dict[str, ExperimentSpec]:
             learning_rate=config.learning_rate,
         ),
         # E4: frozen ResNet transfer learning exercises.
-        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_base", "base", "ninguno", False, "resnet_frozen"),
-        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_no_augmentation", "ablacion", "sin aumentacion", False, "resnet_frozen"),
-        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_lambda_low", "ablacion", f"lambda_age={low_lambda:g}", False, "resnet_frozen"),
-        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", False, "resnet_frozen"),
+        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_base", "base", "ninguno", True, "resnet_frozen"),
+        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_no_augmentation", "ablacion", "sin aumentacion", True, "resnet_frozen"),
+        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_lambda_low", "ablacion", f"lambda_age={low_lambda:g}", True, "resnet_frozen"),
+        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", True, "resnet_frozen"),
         # E5: fine-tuning exercises.
-        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_base", "base", "ninguno", False, "resnet_finetuning"),
-        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_unfreeze_more", "ablacion", "mas bloques descongelados", False, "resnet_finetuning"),
-        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_lr_low", "ablacion", "learning rate menor", False, "resnet_finetuning"),
-        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", False, "resnet_finetuning"),
+        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_base", "base", "ninguno", True, "resnet_finetuning"),
+        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_unfreeze_more", "ablacion", "mas bloques descongelados", True, "resnet_finetuning"),
+        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_lr_low", "ablacion", "learning rate menor", True, "resnet_finetuning"),
+        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", True, "resnet_finetuning"),
     ]
     return {spec.name: spec for spec in specs}
 
@@ -370,12 +371,24 @@ class ExperimentRunner:
             )
 
     @staticmethod
+    @staticmethod
     def _build_model(spec: ExperimentSpec) -> tuple[nn.Module, dict[str, float]]:
         if spec.model_kind == "cnn":
             model_kwargs = {"dropout": spec.dropout}
             return MultiTaskCNN(**model_kwargs), model_kwargs
 
-        
+        if spec.model_kind == "resnet_frozen":
+            # ResNet congelada: 0 bloques descongelados
+            model_kwargs = {"num_unfrozen_blocks": 0, "dropout": spec.dropout}
+            return MultiTaskResNet(**model_kwargs), model_kwargs
+            
+        if spec.model_kind == "resnet_finetuning":
+            # Para fine-tuning descongelamos 1 bloque por defecto.
+            # Si es el experimento 'unfreeze_more', descongelamos 2 bloques.
+            num_unfrozen = 2 if spec.name == "resnet_finetuning_unfreeze_more" else 1
+            model_kwargs = {"num_unfrozen_blocks": num_unfrozen, "dropout": spec.dropout}
+            return MultiTaskResNet(**model_kwargs), model_kwargs
+
         raise NotImplementedError(f"No existe una fabrica para model_kind={spec.model_kind}.")
 
     @staticmethod
