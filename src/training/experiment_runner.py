@@ -234,7 +234,7 @@ class ExperimentRunner:
                 changed_component=spec.changed_component,
                 status=ExperimentStatus.COMPLETED,
                 metrics=metrics,
-                trainable_parameters=self._count_trainable_parameters(model),
+                trainable_parameters=model._count_trainable_parameters(),
                 training_seconds=training_seconds,
                 checkpoint=str(checkpoint_path),
                 message="",
