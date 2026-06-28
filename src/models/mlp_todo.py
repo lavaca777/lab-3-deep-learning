@@ -32,9 +32,13 @@ class MLPMultitask(BaseMultiTaskModel):
         self._count_trainable_parameters = self.count_trainable_parameters
 
     def forward(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        # 1. Pasar la imagen por el bloque denso común
         features = self.shared_features(images)
-        gender_logits = self.gender_head(images)
+        
+        # 2. Bifurcar usando el vector de características extraído
+        gender_logits = self.gender_head(features)
         age_pred = self.age_head(features).squeeze(-1)
+        
         return gender_logits, age_pred
 
 
