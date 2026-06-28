@@ -234,7 +234,7 @@ class ExperimentRunner:
                 changed_component=spec.changed_component,
                 status=ExperimentStatus.COMPLETED,
                 metrics=metrics,
-                trainable_parameters=model._count_trainable_parameters(),
+                trainable_parameters=self._count_trainable_parameters(model),
                 training_seconds=training_seconds,
                 checkpoint=str(checkpoint_path),
                 message="",
@@ -263,8 +263,6 @@ class ExperimentRunner:
             return MultiTaskCNN(**model_kwargs), model_kwargs
         
         elif spec.model_kind == "mlp":
-            # E2: Perceptrón Multicapa Multitarea
-            # Corregido: cambiamos spec.experiment_name por spec.name
             if spec.name == "mlp_no_dropout":
                 model = MLPMultitaskNoDropout(hidden_dim=256)
                 model_kwargs = {"hidden_dim": 256, "use_dropout": False}
