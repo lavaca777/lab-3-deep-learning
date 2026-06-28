@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
+from src.models.base import BaseMultiTaskModel  # <-- Importamos la clase base
 
-class MLPMultitask(nn.Module):
+class MLPMultitask(BaseMultiTaskModel):  # <-- Cambiamos nn.Module por BaseMultiTaskModel
     def __init__(self, input_shape=(3, 224, 224), hidden_dim=256, dropout_prob=0.3, use_dropout=True):
         super(MLPMultitask, self).__init__()
         
@@ -26,14 +27,14 @@ class MLPMultitask(nn.Module):
             
         self.shared_features = nn.Sequential(*modules)
         
-        # Cabezal de clasificación de género (Salida de tamaño 2 para CrossEntropyLoss)
+        # Cabezal de clasificación de género (Salida de tamaño 2)
         self.gender_head = nn.Linear(hidden_dim // 2, 2)
         
-        # Cabezal de regresión de edad (Salida de tamaño 1 para regresión continua)
+        # Cabezal de regresión de edad (Salida de tamaño 1)
         self.age_head = nn.Linear(hidden_dim // 2, 1)
 
-    def forward(self, x):
-        features = self.shared_features(x)
+    def forward(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:  # <-- Usamos la firma del profe
+        features = self.shared_features(images)
         gender_logits = self.gender_head(features)
         age_pred = self.age_head(features).squeeze(-1)  # Ajustar a dimensión (batch_size,)
         return gender_logits, age_pred
