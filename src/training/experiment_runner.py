@@ -1,27 +1,29 @@
-"""Experiment catalog and orchestration for the laboratory."""
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import joblib
 import torch
 from torch import nn, optim
 
+from src.baselines.classical_todo import ClassicalBaseline
 from src.config import AppConfig
 from src.data.datamodule import UTKFaceDataModule
-from src.evaluation.metrics import MultiTaskEvaluator
+from src.evaluation.metrics import MultiTaskEvaluator, MultiTaskMetrics
 from src.evaluation.plots import ResultPlotter
 from src.evaluation.reporter import ExperimentResult, ExperimentStatus
 from src.models.cnn import MultiTaskCNN
 from src.training.losses import MultiTaskLoss
 from src.training.trainer import MultiTaskTrainer
 from src.utils import set_seed
-from src.models.mlp_todo import MLPMultitask, MLPMultitaskNoDropout 
+
 
 @dataclass(frozen=True)
 class ExperimentSpec:
-    """Configuration for one base experiment or one single-change ablation."""
+    
 
     strategy_id: str
     strategy_name: str
@@ -34,29 +36,47 @@ class ExperimentSpec:
     dropout: float = 0.4
     lambda_age: float = 0.01
     learning_rate: float = 1e-3
+    
+    classical_image_size: int = 64
+    n_components: int = 100
+    gender_model: str = "logistic"
+    age_model: str = "ridge"
 
 
 def build_experiment_catalog(config: AppConfig) -> dict[str, ExperimentSpec]:
-    """Return all required strategies and their expected ablation studies.
-
-    E3 is delivered as a complete example. E1, E2, E4 and E5 are intentionally
-    visible but not implemented so students can complete and report them.
-    """
+    
 
     low_lambda = config.lambda_age / 10
     high_lambda = config.lambda_age * 10
 
     specs = [
-        # E1: classical baseline. The estimator itself will use scikit-learn.
-        ExperimentSpec("E1", "Baseline clasico", "classical_base", "base", "ninguno", False, "classical"),
-        ExperimentSpec("E1", "Baseline clasico", "classical_pca_50", "ablacion", "PCA=50 componentes", False, "classical"),
-        ExperimentSpec("E1", "Baseline clasico", "classical_pca_200", "ablacion", "PCA=200 componentes", False, "classical"),
-        # E2: students must implement both the base MLP and its ablations.
-        ExperimentSpec("E2", "MLP multitarea", "mlp_base", "base", "ninguno", True, "mlp"),
-        ExperimentSpec("E2", "MLP multitarea", "mlp_no_dropout", "ablacion", "dropout=0.0", True, "mlp"),
-        ExperimentSpec("E2", "MLP multitarea", "mlp_lambda_low", "ablacion", f"lambda_age={low_lambda:g}", True, "mlp"),
-        ExperimentSpec("E2", "MLP multitarea", "mlp_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", True, "mlp"),
-        # E3: complete PyTorch CNN example and one-change-at-a-time ablations.
+        
+        ExperimentSpec(
+            "E1", "Baseline clasico", "classical_base", "base", "ninguno", True, "classical",
+            n_components=100, gender_model="logistic", age_model="ridge",
+        ),
+        ExperimentSpec(
+            "E1", "Baseline clasico", "classical_pca_50", "ablacion", "PCA=50 componentes", True, "classical",
+            n_components=50, gender_model="logistic", age_model="ridge",
+        ),
+        ExperimentSpec(
+            "E1", "Baseline clasico", "classical_pca_200", "ablacion", "PCA=200 componentes", True, "classical",
+            n_components=200, gender_model="logistic", age_model="ridge",
+        ),
+        ExperimentSpec(
+            "E1", "Baseline clasico", "classical_gaussian_nb", "ablacion", "clasificador=GaussianNB", True, "classical",
+            n_components=100, gender_model="gaussian_nb", age_model="ridge",
+        ),
+        ExperimentSpec(
+            "E1", "Baseline clasico", "classical_age_random_forest", "ablacion", "regresor_edad=RandomForest", True, "classical",
+            n_components=100, gender_model="logistic", age_model="random_forest",
+        ),
+        
+        ExperimentSpec("E2", "MLP multitarea", "mlp_base", "base", "ninguno", False, "mlp"),
+        ExperimentSpec("E2", "MLP multitarea", "mlp_no_dropout", "ablacion", "dropout=0.0", False, "mlp"),
+        ExperimentSpec("E2", "MLP multitarea", "mlp_lambda_low", "ablacion", f"lambda_age={low_lambda:g}", False, "mlp"),
+        ExperimentSpec("E2", "MLP multitarea", "mlp_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", False, "mlp"),
+        
         ExperimentSpec(
             "E3",
             "CNN simple multitarea",
@@ -123,21 +143,21 @@ def build_experiment_catalog(config: AppConfig) -> dict[str, ExperimentSpec]:
             learning_rate=config.learning_rate,
         ),
         # E4: frozen ResNet transfer learning exercises.
-        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_base", "base", "ninguno", True, "resnet_frozen"),
-        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_no_augmentation", "ablacion", "sin aumentacion", True, "resnet_frozen"),
-        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_lambda_low", "ablacion", f"lambda_age={low_lambda:g}", True, "resnet_frozen"),
-        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", True, "resnet_frozen"),
+        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_base", "base", "ninguno", False, "resnet_frozen"),
+        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_no_augmentation", "ablacion", "sin aumentacion", False, "resnet_frozen"),
+        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_lambda_low", "ablacion", f"lambda_age={low_lambda:g}", False, "resnet_frozen"),
+        ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", False, "resnet_frozen"),
         # E5: fine-tuning exercises.
-        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_base", "base", "ninguno", True, "resnet_finetuning"),
-        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_unfreeze_more", "ablacion", "mas bloques descongelados", True, "resnet_finetuning"),
-        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_lr_low", "ablacion", "learning rate menor", True, "resnet_finetuning"),
-        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", True, "resnet_finetuning"),
+        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_base", "base", "ninguno", False, "resnet_finetuning"),
+        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_unfreeze_more", "ablacion", "mas bloques descongelados", False, "resnet_finetuning"),
+        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_lr_low", "ablacion", "learning rate menor", False, "resnet_finetuning"),
+        ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", False, "resnet_finetuning"),
     ]
     return {spec.name: spec for spec in specs}
 
 
 class ExperimentRunner:
-    """Run selected experiments and preserve report rows for every strategy."""
+    
 
     def __init__(
         self,
@@ -169,6 +189,105 @@ class ExperimentRunner:
         return results
 
     def _run_spec(self, spec: ExperimentSpec) -> ExperimentResult:
+        if spec.model_kind == "classical":
+            return self._run_classical_spec(spec)
+        return self._run_neural_spec(spec)
+
+    def _run_classical_spec(self, spec: ExperimentSpec) -> ExperimentResult:
+       
+
+        print(f"\nEjecutando {spec.name}: {spec.changed_component}")
+        try:
+            set_seed(self.config.seed)
+            
+            data_module = UTKFaceDataModule(self.config, use_augmentation=False)
+            data_module.setup()
+
+            baseline = ClassicalBaseline(
+                image_size=spec.classical_image_size,
+                n_components=spec.n_components,
+                gender_model=spec.gender_model,
+                age_model=spec.age_model,
+                random_state=self.config.seed,
+            )
+
+            start_time = time.perf_counter()
+            baseline.fit(self._require_records(data_module, "train"))
+            training_seconds = time.perf_counter() - start_time
+
+            test_records = self._require_records(data_module, "test")
+            gender_predictions, age_predictions = baseline.predict(test_records)
+            gender_targets = [record.gender for record in test_records]
+            age_targets = [record.age for record in test_records]
+
+            evaluation = MultiTaskMetrics.calculate(
+                gender_targets=torch.tensor(gender_targets, dtype=torch.long),
+                gender_predictions=torch.tensor(gender_predictions, dtype=torch.long),
+                age_targets=torch.tensor(age_targets, dtype=torch.float32),
+                age_predictions=torch.tensor(age_predictions, dtype=torch.float32),
+            )
+
+            self.plotter.plot_confusion_matrix(evaluation, spec.name)
+            self.plotter.plot_age_predictions(evaluation, spec.name)
+
+            checkpoint_path = self.config.checkpoints_dir / spec.name / "baseline.joblib"
+            checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+            joblib.dump(
+                {
+                    "experiment_name": spec.name,
+                    "image_size": spec.classical_image_size,
+                    "gender_pipeline": baseline.gender_pipeline,
+                    "age_pipeline": baseline.age_pipeline,
+                },
+                checkpoint_path,
+            )
+
+            sizes = data_module.split_sizes()
+            metrics = dict(evaluation.metrics)
+            metrics.update(
+                {
+                    "train_samples": sizes["train"],
+                    "validation_samples": sizes["validation"],
+                    "test_samples": sizes["test"],
+                }
+            )
+
+            return ExperimentResult(
+                strategy_id=spec.strategy_id,
+                strategy_name=spec.strategy_name,
+                experiment_name=spec.name,
+                variant=spec.variant,
+                changed_component=spec.changed_component,
+                status=ExperimentStatus.COMPLETED,
+                metrics=metrics,
+                trainable_parameters=baseline.count_trainable_parameters(),
+                training_seconds=training_seconds,
+                checkpoint=str(checkpoint_path),
+                message="",
+            )
+        except Exception as error:
+            return ExperimentResult(
+                strategy_id=spec.strategy_id,
+                strategy_name=spec.strategy_name,
+                experiment_name=spec.name,
+                variant=spec.variant,
+                changed_component=spec.changed_component,
+                status=ExperimentStatus.ERROR,
+                message=str(error),
+            )
+
+    @staticmethod
+    def _require_records(data_module: UTKFaceDataModule, split: str):
+        dataset = {
+            "train": data_module.train_dataset,
+            "validation": data_module.val_dataset,
+            "test": data_module.test_dataset,
+        }[split]
+        if dataset is None:
+            raise RuntimeError(f"El dataset de {split} no esta listo. Ejecute setup() primero.")
+        return dataset.records
+
+    def _run_neural_spec(self, spec: ExperimentSpec) -> ExperimentResult:
         print(f"\nEjecutando {spec.name}: {spec.changed_component}")
         try:
             set_seed(self.config.seed)
@@ -251,39 +370,12 @@ class ExperimentRunner:
             )
 
     @staticmethod
-    @staticmethod
-
     def _build_model(spec: ExperimentSpec) -> tuple[nn.Module, dict[str, float]]:
-        from src.models.cnn import MultiTaskCNN
-        from src.models.resnet_todo import MultiTaskResNet  # Añadir esta importación
-        from src.models.mlp_todo import MLPMultitask, MLPMultitaskNoDropout  # <-- Añadimos esto
-        
         if spec.model_kind == "cnn":
             model_kwargs = {"dropout": spec.dropout}
             return MultiTaskCNN(**model_kwargs), model_kwargs
-        
-        elif spec.model_kind == "mlp":
-            if spec.name == "mlp_no_dropout":
-                model = MLPMultitaskNoDropout(hidden_dim=256)
-                model_kwargs = {"hidden_dim": 256, "use_dropout": False}
-            else:
-                model = MLPMultitask(hidden_dim=256)
-                model_kwargs = {"hidden_dim": 256, "use_dropout": True}
-            return model, model_kwargs
-        
-        elif spec.model_kind == "resnet_frozen":
-            # E4: ResNet con extractor de características totalmente congelado
-            model_kwargs = {"num_unfrozen_blocks": 0}
-            return MultiTaskResNet(**model_kwargs), model_kwargs
-            
-        elif spec.model_kind == "resnet_finetuning":
-            # E5: Fine-tuning. Descongelamos 1 bloque final por defecto.
-            # Si es la ablación específica que pide más bloques, descongelamos 2 (layer3 y layer4)
-            unfreeze = 2 if "mas bloques" in spec.changed_component else 1
-            model_kwargs = {"num_unfrozen_blocks": unfreeze}
-            return MultiTaskResNet(**model_kwargs), model_kwargs
 
-        # TODO(alumno): extend this factory when E1 and E2 are implemented.
+        
         raise NotImplementedError(f"No existe una fabrica para model_kind={spec.model_kind}.")
 
     @staticmethod
