@@ -1,3 +1,4 @@
+"""Experiment catalog and orchestration for the laboratory."""
 
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ from src.evaluation.plots import ResultPlotter
 from src.evaluation.reporter import ExperimentResult, ExperimentStatus
 from src.models.cnn import MultiTaskCNN
 from src.models.resnet_todo import MultiTaskResNet
+from src.models.mlp_todo import MLPMultitask, MLPMultitaskNoDropout
 from src.training.losses import MultiTaskLoss
 from src.training.trainer import MultiTaskTrainer
 from src.utils import set_seed
@@ -24,7 +26,7 @@ from src.utils import set_seed
 
 @dataclass(frozen=True)
 class ExperimentSpec:
-    
+    """Configuration for one base experiment or one single-change ablation."""
 
     strategy_id: str
     strategy_name: str
@@ -45,13 +47,12 @@ class ExperimentSpec:
 
 
 def build_experiment_catalog(config: AppConfig) -> dict[str, ExperimentSpec]:
-    
-
+    """Return all required strategies and their expected ablation studies."""
     low_lambda = config.lambda_age / 10
     high_lambda = config.lambda_age * 10
 
     specs = [
-        
+        # E1: Baseline clásico usando scikit-learn
         ExperimentSpec(
             "E1", "Baseline clasico", "classical_base", "base", "ninguno", True, "classical",
             n_components=100, gender_model="logistic", age_model="ridge",
@@ -73,11 +74,13 @@ def build_experiment_catalog(config: AppConfig) -> dict[str, ExperimentSpec]:
             n_components=100, gender_model="logistic", age_model="random_forest",
         ),
         
-        ExperimentSpec("E2", "MLP multitarea", "mlp_base", "base", "ninguno", False, "mlp"),
-        ExperimentSpec("E2", "MLP multitarea", "mlp_no_dropout", "ablacion", "dropout=0.0", False, "mlp"),
-        ExperimentSpec("E2", "MLP multitarea", "mlp_lambda_low", "ablacion", f"lambda_age={low_lambda:g}", False, "mlp"),
-        ExperimentSpec("E2", "MLP multitarea", "mlp_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", False, "mlp"),
+        # E2: MLP multitarea
+        ExperimentSpec("E2", "MLP multitarea", "mlp_base", "base", "ninguno", True, "mlp"),
+        ExperimentSpec("E2", "MLP multitarea", "mlp_no_dropout", "ablacion", "dropout=0.0", True, "mlp"),
+        ExperimentSpec("E2", "MLP multitarea", "mlp_lambda_low", "ablacion", f"lambda_age={low_lambda:g}", True, "mlp"),
+        ExperimentSpec("E2", "MLP multitarea", "mlp_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", True, "mlp"),
         
+        # E3: CNN simple multitarea
         ExperimentSpec(
             "E3",
             "CNN simple multitarea",
@@ -143,11 +146,13 @@ def build_experiment_catalog(config: AppConfig) -> dict[str, ExperimentSpec]:
             lambda_age=high_lambda,
             learning_rate=config.learning_rate,
         ),
+        
         # E4: frozen ResNet transfer learning exercises.
         ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_base", "base", "ninguno", True, "resnet_frozen"),
         ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_no_augmentation", "ablacion", "sin aumentacion", True, "resnet_frozen"),
         ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_lambda_low", "ablacion", f"lambda_age={low_lambda:g}", True, "resnet_frozen"),
         ExperimentSpec("E4", "ResNet18 congelada", "resnet_frozen_lambda_high", "ablacion", f"lambda_age={high_lambda:g}", True, "resnet_frozen"),
+        
         # E5: fine-tuning exercises.
         ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_base", "base", "ninguno", True, "resnet_finetuning"),
         ExperimentSpec("E5", "ResNet18 fine-tuning", "resnet_finetuning_unfreeze_more", "ablacion", "mas bloques descongelados", True, "resnet_finetuning"),
@@ -158,7 +163,7 @@ def build_experiment_catalog(config: AppConfig) -> dict[str, ExperimentSpec]:
 
 
 class ExperimentRunner:
-    
+    """Run selected experiments and preserve report rows for every strategy."""
 
     def __init__(
         self,
@@ -195,8 +200,6 @@ class ExperimentRunner:
         return self._run_neural_spec(spec)
 
     def _run_classical_spec(self, spec: ExperimentSpec) -> ExperimentResult:
-       
-
         print(f"\nEjecutando {spec.name}: {spec.changed_component}")
         try:
             set_seed(self.config.seed)
@@ -371,20 +374,25 @@ class ExperimentRunner:
             )
 
     @staticmethod
-    @staticmethod
-    def _build_model(spec: ExperimentSpec) -> tuple[nn.Module, dict[str, float]]:
+    def _build_model(spec: ExperimentSpec) -> tuple[nn.Module, dict[str, any]]:
         if spec.model_kind == "cnn":
             model_kwargs = {"dropout": spec.dropout}
             return MultiTaskCNN(**model_kwargs), model_kwargs
 
-        if spec.model_kind == "resnet_frozen":
-            # ResNet congelada: 0 bloques descongelados
+        elif spec.model_kind == "mlp":
+            if spec.name == "mlp_no_dropout":
+                model = MLPMultitaskNoDropout(hidden_dim=256)
+                model_kwargs = {"hidden_dim": 256, "use_dropout": False}
+            else:
+                model = MLPMultitask(hidden_dim=256)
+                model_kwargs = {"hidden_dim": 256, "use_dropout": True}
+            return model, model_kwargs
+
+        elif spec.model_kind == "resnet_frozen":
             model_kwargs = {"num_unfrozen_blocks": 0, "dropout": spec.dropout}
             return MultiTaskResNet(**model_kwargs), model_kwargs
             
-        if spec.model_kind == "resnet_finetuning":
-            # Para fine-tuning descongelamos 1 bloque por defecto.
-            # Si es el experimento 'unfreeze_more', descongelamos 2 bloques.
+        elif spec.model_kind == "resnet_finetuning":
             num_unfrozen = 2 if spec.name == "resnet_finetuning_unfreeze_more" else 1
             model_kwargs = {"num_unfrozen_blocks": num_unfrozen, "dropout": spec.dropout}
             return MultiTaskResNet(**model_kwargs), model_kwargs
