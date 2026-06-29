@@ -12,7 +12,8 @@ from src.models.base import BaseMultiTaskModel
 class MultiTaskResNet(BaseMultiTaskModel):
     """Implementación de E4 y E5 con torchvision.models.resnet18."""
 
-    def __init__(self, num_unfrozen_blocks: int = 0) -> None:
+    # Se agregó 'dropout: float = 0.0' a los parámetros
+    def __init__(self, num_unfrozen_blocks: int = 0, dropout: float = 0.0) -> None:
         super().__init__()
         
         # 1. Cargar el modelo base preentrenado
@@ -42,13 +43,17 @@ class MultiTaskResNet(BaseMultiTaskModel):
         in_features = self.backbone.fc.in_features
         self.backbone.fc = nn.Identity()
 
-        # 5. Definir los nuevos cabezales independientes para género y edad
+        # 5. Definir la capa de dropout y los nuevos cabezales independientes
+        self.dropout = nn.Dropout(p=dropout)
         self.gender_head = nn.Linear(in_features, 2)
         self.age_head = nn.Linear(in_features, 1)
 
     def forward(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         # Extraer características visuales compartidas
         features = self.backbone(images)
+        
+        # Aplicar regularización Dropout
+        features = self.dropout(features)
         
         # Generar salidas de clasificación (género) y regresión (edad)
         gender_logits = self.gender_head(features)
